@@ -83,6 +83,168 @@ static const unsigned short P[BITS_IN_P] = {
     15, 6, 19, 20, 28, 11, 27, 16, 0,  14, 22, 25, 4,  17, 30, 9,
     1,  7, 23, 13, 31, 26, 2,  8,  18, 12, 29, 5,  21, 10, 3,  24};
 
+unsigned char* DES_block_cipher(const unsigned char* block,
+                                const unsigned char** keys, bool mode) {
+    unsigned char perm_block[] = {0x00, 0x00, 0x00, 0x00,
+                                  0x00, 0x00, 0x00, 0x00};
+    unsigned char swap_block[] = {0x00, 0x00, 0x00, 0x00,
+                                  0x00, 0x00, 0x00, 0x00};
+    unsigned char* enc_block = NULL;
+    unsigned char* half_left = NULL;
+    unsigned char* half_right = NULL;
+    unsigned char* half_aux = NULL;
+    char mask;
+    short index;
+    int i, j;
+
+    /* Se hace la comprobación de argumentos. */
+    if (block == NULL || keys == NULL) {
+        fprintf(stderr, "Argumento NULO en DES_block_cipher.\n");
+        return NULL;
+    }
+
+    /* Se realiza la permutación IP */
+    for (i = 0, index = IP[i]; i < BITS_IN_IP; i++, index = IP[i]) {
+        mask = 1 << (7 - (index % 8));
+        if (block[index / 8] & mask) {
+            perm_block[i / 8] |= 1 << (7 - (i % 8));
+        }
+    }
+
+    half_left = &perm_block[0];
+    half_right = &perm_block[4];
+    /*Se realizan las 16 rondas*/
+    if (mode == true) {
+        for (i = 0; i < ROUNDS; i++) {
+            /*Se realiza la función F*/
+            half_aux = DES_F_function(half_right, keys[i]);
+            if (half_aux == NULL) {
+                fprintf(stderr, "Error con la F funtion en la ronda %d\n", i);
+                return NULL;
+            }
+
+            /*Se hace un XOR*/
+            for (j = 0; j < 4; j++) {
+                half_left[j] ^= half_aux[j];
+            }
+            free(half_aux);
+            /* Swap  */
+            half_aux = half_left;
+            half_left = half_right;
+            half_right = half_aux;
+        }
+    } else {
+        for (i = ROUNDS; i > 0; i--) {
+            /*Se realiza la función F*/
+            half_aux = DES_F_function(half_right, keys[i - 1]);
+            if (half_aux == NULL) {
+                fprintf(stderr, "Error con la F funtion en la ronda %d\n", i);
+                return NULL;
+            }
+            
+            /*Se hace un XOR*/
+            for (j = 0; j < 4; j++) {
+                half_left[j] ^= half_aux[j];
+            }
+            free(half_aux);
+            /* Swap  */
+            half_aux = half_left;
+            half_left = half_right;
+            half_right = half_aux;
+        }
+    }
+
+    /*Swap final.*/
+    for (i = 0; i < 4; i++) {
+        swap_block[i] = half_right[i];
+        swap_block[i + 4] = half_left[i];
+    }
+
+    /*Se reserva memoria para el bloque cifrado.*/
+    enc_block = (unsigned char*)calloc(8, sizeof(char));
+    if (enc_block == NULL) {
+        return NULL;
+    }
+
+    /* Se realiza la permutación IP_INV */
+    for (i = 0, index = IP_INV[i]; i < BITS_IN_IP; i++, index = IP_INV[i]) {
+        mask = 1 << (7 - (index % 8));
+        if (swap_block[index / 8] & mask) {
+            enc_block[i / 8] |= 1 << (7 - (i % 8));
+        }
+    }
+
+    return enc_block;
+}
+
+unsigned char* DES_F_function(const unsigned char* right,
+                              const unsigned char* key) {
+    unsigned char exp_right[] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+    unsigned char pre_half_block[] = {0x00, 0x00, 0x00, 0x00};
+    unsigned char mask;
+    unsigned short index, x_index, y_index;
+    unsigned short S_index[NUM_S_BOXES] = {0x00, 0x00, 0x00, 0x00,
+                                           0x00, 0x00, 0x00, 0x00};
+    unsigned char* half_block = NULL;
+    int i;
+
+    /* Se hace la comprobación de argumentos. */
+    if (right == NULL || key == NULL) {
+        fprintf(stderr, "Argumento NULO en DES_F_function.\n");
+        return NULL;
+    }
+
+    /*Se expande el medio bloque.*/
+    for (i = 0, index = E[i]; i < BITS_IN_E; i++, index = E[i]) {
+        mask = 1 << (7 - (index % 8));
+        if (right[index / 8] & mask) {
+            exp_right[i / 8] |= 1 << (7 - (i % 8));
+        }
+    }
+
+    /*Se realizar un XOR entre el medio bloque y la clave*/
+    for (i = 0; i < 6; i++) {
+        exp_right[i] ^= key[i];
+    }
+
+    /*Se obtienen los indices para las SBox*/
+    S_index[0] = (exp_right[0] & 0b11111100) >> 2;
+    S_index[1] = (exp_right[0] & 0b00000011) << 4 | (exp_right[1] & 0xF0) >> 4;
+    S_index[2] = (exp_right[1] & 0x0F) << 2 | (exp_right[2] & 0b11000000) >> 6;
+    S_index[3] = exp_right[2] & 0b00111111;
+    S_index[4] = (exp_right[3] & 0b11111100) >> 2;
+    S_index[5] = (exp_right[3] & 0b00000011) << 4 | (exp_right[4] & 0xF0) >> 4;
+    S_index[6] = (exp_right[4] & 0x0F) << 2 | (exp_right[5] & 0b11000000) >> 6;
+    S_index[7] = exp_right[5] & 0b00111111;
+
+    /*Se pasa el resultado por las cajas de sustitución*/
+    for (i = 0, index = S_index[i]; i < NUM_S_BOXES; i++, index = S_index[i]) {
+        y_index = (index & 0b011110) >> 1;
+        x_index = (index & 0b100000) >> 4 | (index & 0b000001);
+
+        pre_half_block[i / 2] |= S_BOXES[i][x_index][y_index];
+        if (i % 2 == 0) {
+            pre_half_block[i / 2] <<= 4;
+        }
+    }
+
+    /*Se reserva memoria para el medio bloque resultante.*/
+    half_block = (unsigned char*)calloc(4, sizeof(char));
+    if (half_block == NULL) {
+        fprintf(stderr, "Error al reservar memoria.\n");
+        return NULL;
+    }
+
+    /*Se realiza la permutación final.*/
+    for (i = 0, index = P[i]; i < BITS_IN_P; i++, index = P[i]) {
+        mask = 1 << (7 - (index % 8));
+        if (pre_half_block[index / 8] & mask) {
+            half_block[i / 8] |= 1 << (7 - (i % 8));
+        }
+    }
+    return half_block;
+}
+
 unsigned char** DES_generate_subKeys(const unsigned char* key) {
     unsigned char key_gen[] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
     unsigned char* sub_keys = NULL;
@@ -125,9 +287,8 @@ unsigned char** DES_generate_subKeys(const unsigned char* key) {
     }
 
     /*Se generan las 16 sub-claves*/
-        for (i = 0, shift = ROUND_SHIFTS[i]; i < ROUNDS;
+    for (i = 0, shift = ROUND_SHIFTS[i]; i < ROUNDS;
          i++, shift = ROUND_SHIFTS[i]) {
-
         /*Se obtienen las mascaras para los shift de 1 y 3 bits*/
         if (shift == 1) {
             mask_1 = 0b10000000;
@@ -180,9 +341,9 @@ int checkOddParity(const unsigned char* data, int length) {
         /*Paridad par y el bit de paridad indicando impar. */
         if ((count % 2 == 0) && (parity == 0)) {
             return 1;
-        /*Paridad impar y el bit de paridad indicando par. */
+            /*Paridad impar y el bit de paridad indicando par. */
         } else if ((count % 2 != 0) && (parity != 0)) {
-            return 1; // Paridad par
+            return 1;  // Paridad par
         }
     }
 

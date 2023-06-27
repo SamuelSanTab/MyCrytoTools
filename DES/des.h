@@ -80,6 +80,25 @@ int DES_CTR_file(const char* input_file, const char* output_file,
 /*Funciones internas para el funcionamiento del DES.*/
 
 /**
+ * La función reserva memoria y cifra/descifra un bloque con DES.
+ * @param block: Bloque de 64 bits que cifrar.
+ * @param keys: Las 16 claves que cifrar.
+ * @param mode: true para cifrar y false para descifrar.
+ * @return: Bloque de 64 bits cifrado o NULL en caso de error.
+ */
+unsigned char* DES_block_cipher(const unsigned char* block,
+                                const unsigned char** keys, bool mode);
+
+/**
+ * La función realiza la función F de Feistel.
+ * @param right: Mitad derecha del bloque que se esta cifrando.
+ * @param key: Clave que se esta usando.
+ * @return Puntero al medio bloque con generado o NULL en caso de error.
+ * */
+unsigned char* DES_F_function(const unsigned char* right,
+                              const unsigned char* key);
+
+/**
  * La función genera las 16 sub-claves de DES.
  * @param key: Clave de 64 bits con la generar el resto de sub-claves.
  * @return En caso de éxito un array de 16 punteros a cada una de las sub-claves
