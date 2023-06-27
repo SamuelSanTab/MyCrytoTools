@@ -2,6 +2,9 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
+
+#define BYTES_IN_BLOCK 8
 
 #define BITS_IN_PC1 56
 #define ROUNDS 16
@@ -83,6 +86,9 @@ static const unsigned short P[BITS_IN_P] = {
     15, 6, 19, 20, 28, 11, 27, 16, 0,  14, 22, 25, 4,  17, 30, 9,
     1,  7, 23, 13, 31, 26, 2,  8,  18, 12, 29, 5,  21, 10, 3,  24};
 
+
+/*Funciones internas para el funcionamiento del DES.*/
+
 unsigned char* DES_block_cipher(const unsigned char* block,
                                 const unsigned char** keys, bool mode) {
     unsigned char perm_block[] = {0x00, 0x00, 0x00, 0x00,
@@ -98,8 +104,11 @@ unsigned char* DES_block_cipher(const unsigned char* block,
     int i, j;
 
     /* Se hace la comprobación de argumentos. */
-    if (block == NULL || keys == NULL) {
-        fprintf(stderr, "Argumento NULO en DES_block_cipher.\n");
+    if (keys == NULL) {
+        fprintf(stderr, "Error. Claves vacía.\n");
+        return NULL;
+    } else if (block == NULL) {
+        fprintf(stderr, "Error. Bloque vacío.\n");
         return NULL;
     }
 
@@ -119,7 +128,8 @@ unsigned char* DES_block_cipher(const unsigned char* block,
             /*Se realiza la función F*/
             half_aux = DES_F_function(half_right, keys[i]);
             if (half_aux == NULL) {
-                fprintf(stderr, "Error con la F funtion en la ronda %d\n", i);
+                fprintf(stderr, "Error. Fallo en la función F en la ronda %d\n",
+                        i);
                 return NULL;
             }
 
@@ -138,10 +148,11 @@ unsigned char* DES_block_cipher(const unsigned char* block,
             /*Se realiza la función F*/
             half_aux = DES_F_function(half_right, keys[i - 1]);
             if (half_aux == NULL) {
-                fprintf(stderr, "Error con la F funtion en la ronda %d\n", i);
+                fprintf(stderr, "Error. Fallo en la función F en la ronda %d\n",
+                        i);
                 return NULL;
             }
-            
+
             /*Se hace un XOR*/
             for (j = 0; j < 4; j++) {
                 half_left[j] ^= half_aux[j];
@@ -163,6 +174,7 @@ unsigned char* DES_block_cipher(const unsigned char* block,
     /*Se reserva memoria para el bloque cifrado.*/
     enc_block = (unsigned char*)calloc(8, sizeof(char));
     if (enc_block == NULL) {
+        fprintf(stderr, "Error. Fallo al reservar memoria.");
         return NULL;
     }
 
@@ -189,8 +201,11 @@ unsigned char* DES_F_function(const unsigned char* right,
     int i;
 
     /* Se hace la comprobación de argumentos. */
-    if (right == NULL || key == NULL) {
-        fprintf(stderr, "Argumento NULO en DES_F_function.\n");
+    if (key == NULL) {
+        fprintf(stderr, "Error. Clave vacía.\n");
+        return NULL;
+    } else if (right == NULL) {
+        fprintf(stderr, "Error. Medio bloque vacío.\n");
         return NULL;
     }
 
@@ -231,7 +246,7 @@ unsigned char* DES_F_function(const unsigned char* right,
     /*Se reserva memoria para el medio bloque resultante.*/
     half_block = (unsigned char*)calloc(4, sizeof(char));
     if (half_block == NULL) {
-        fprintf(stderr, "Error al reservar memoria.\n");
+        fprintf(stderr, "Error. Fallo al reservar memoria.\n");
         return NULL;
     }
 
@@ -250,18 +265,18 @@ unsigned char** DES_generate_subKeys(const unsigned char* key) {
     unsigned char* sub_keys = NULL;
     unsigned char** key_index = NULL;
     unsigned char mask_1, mask_2;
-    unsigned short index, shift;
+    unsigned short index, shift, subkey_size;
     int i, j;
 
-    /* Se hace la comprobación de argumentos. */
+    /* Se comprueba que la clave no sea nula. */
     if (key == NULL) {
-        fprintf(stderr, "Argumento NULO en DES_generate_subKeys.\n");
+        fprintf(stderr, "Error. Clave vacía.\n");
         return NULL;
     }
 
     /* Se comprueba la paridad de la clave. */
-    if (checkOddParity(key, 8) != 0) {
-        fprintf(stderr, "La clave no cumple la paridad indicada.\n");
+    if (checkOddParity(key, BYTES_IN_BLOCK) != 0) {
+        fprintf(stderr, "Error. La clave no cumple con la paridad.\n");
         return NULL;
     }
 
@@ -273,33 +288,46 @@ unsigned char** DES_generate_subKeys(const unsigned char* key) {
         }
     }
 
-    /* Reservar memoria */
-    sub_keys = (char*)calloc(16, sizeof(char) * 6);
+    /* Se reserva memoria para las 16 sub-claves y para el indice que apunte a
+     * las mismas. */
+    subkey_size = BITS_IN_PC2 / 8;
+    sub_keys = (char*)calloc(ROUNDS, sizeof(char) * subkey_size);
     if (sub_keys == NULL) {
-        fprintf(stderr, "Error al reservar memoria.\n");
+        fprintf(stderr, "Error. Fallo al reservar memoria.\n");
         return NULL;
     }
-    key_index = (unsigned char**)calloc(16, sizeof(char*));
+    key_index = (unsigned char**)calloc(ROUNDS, sizeof(char*));
     if (key_index == NULL) {
         free(sub_keys);
-        fprintf(stderr, "Error al reservar memoria.\n");
+        fprintf(stderr, "Error. Fallo al reservar memoria.\n");
         return NULL;
+    }
+
+    /* Se asignan los punteros al indice. */
+    for (i = 0; i < ROUNDS; i++) {
+        key_index[i] = &sub_keys[subkey_size * i];
     }
 
     /*Se generan las 16 sub-claves*/
     for (i = 0, shift = ROUND_SHIFTS[i]; i < ROUNDS;
          i++, shift = ROUND_SHIFTS[i]) {
-        /*Se obtienen las mascaras para los shift de 1 y 3 bits*/
+        /* Se obtienen las mascaras para los shift de 1 y 3 bits*/
         if (shift == 1) {
             mask_1 = 0b10000000;
-        } else {
+        } else if (shift == 2) {
             mask_1 = 0b11000000;
+        } else {
+            fprintf(stderr, "Error. El tamaño de máscara no es válido.\n");
+            free(key_index);
+            free(sub_keys);
+            return NULL;
         }
         mask_2 = mask_1 >> 4;
 
         /*Se obtienen las los bits necesarios antes de perderlos*/
         mask_1 &= key_gen[0];
         mask_2 &= key_gen[3];
+
         /*Se desplazan los bits*/
         key_gen[0] = key_gen[0] << shift | key_gen[1] >> (8 - shift);
         key_gen[1] = key_gen[1] << shift | key_gen[2] >> (8 - shift);
@@ -311,11 +339,10 @@ unsigned char** DES_generate_subKeys(const unsigned char* key) {
         key_gen[6] = key_gen[6] << shift | mask_2 >> (4 - shift);
 
         /*Se realiza la permutación PC2*/
-        key_index[i] = &sub_keys[i * 6];
         for (j = 0, index = PC2[j]; j < BITS_IN_PC2; j++, index = PC2[j]) {
             mask_1 = 0b1 << (7 - (index % 8));
             if (key_gen[index / 8] & mask_1) {
-                sub_keys[(i * 6) + (j / 8)] |= 0b1 << (7 - (j % 8));
+                key_index[i][j / 8] |= 0b1 << (7 - (j % 8));
             }
         }
     }
@@ -324,28 +351,91 @@ unsigned char** DES_generate_subKeys(const unsigned char* key) {
 }
 
 int checkOddParity(const unsigned char* data, int length) {
+    unsigned char byte;
     int i, parity, count = 0;
 
-    /* Recorre cada byte en la cadena*/
-    for (i = 0; i < length; i++) {
-        unsigned char byte = data[i];
-        parity = data[i] & 1;
-        count = 0;
+    /* Se comprueba que el tamaño no es menor que 1 y data es nulo.  */
+    if (length < 1) {
+        fprintf(stderr, "Error. Tamaño de bloque menor que 1.\n");
+        return 1;
+    } else if (data == NULL) {
+        fprintf(stderr, "Error. Argumento vacío.\n");
+        return 1;
+    }
 
-        /* Cuenta el número de bits establecidos en 1*/
-        byte >>= 1;
+    /* Recorre cada byte en la cadena para comprobarlo. */
+    for (i = 0; i < length; i++, count = 0) {
+        /* Se obtienen por separado los 7 bits de contenido y el de paridad. */
+        byte = data[i] >> 1;
+        parity = data[i] & 1;
+
+        /* Mientras el byte no sea 0 se cuenta si el bit de menor valor es 1. */
         while (byte) {
             count += byte & 1;
             byte >>= 1;
         }
-        /*Paridad par y el bit de paridad indicando impar. */
-        if ((count % 2 == 0) && (parity == 0)) {
+
+        /* Si la paridad indica par, el bit de paridad tiene que ser 1; o si la
+         * paridad indica impar, el bit de paridad tiene que ser 0. */
+        if ((count % 2 == 0 && parity == 0) ||
+            (count % 2 != 0 && parity != 0)) {
             return 1;
-            /*Paridad impar y el bit de paridad indicando par. */
-        } else if ((count % 2 != 0) && (parity != 0)) {
-            return 1;  // Paridad par
         }
     }
 
     return 0;
+}
+
+unsigned char* add_padding(const unsigned char* block, int size,
+                           enum DES_padding padding) {
+    unsigned char* padding_block = NULL;
+    int i, padding_size = BYTES_IN_BLOCK - size;
+
+    /* Se comprueba que el tamaño del padding no sea mayor que el de bloque. */
+    if (size < 0 || size > BYTES_IN_BLOCK) {
+        fprintf(stderr, "Error. Tamaño de bloque fuera de rango.\n");
+        return NULL;
+    }
+
+    /* Se crea un bloque al que añadirle el padding. */
+    padding_block = (unsigned char*)calloc(BYTES_IN_BLOCK, sizeof(char));
+
+    /* Se copian los datos. */
+    for (i = 0; i < size; i++) {
+        padding_block[i] = block[i];
+    }
+
+    /*Se rellena el resto del bloque. */
+    switch (padding) {
+        /* El padding PKCS#5 consiste en rellenar con el tamaño de padding. */
+        case PKCS_5:
+            for (i = size; i < BYTES_IN_BLOCK; i++) {
+                padding_block[i] = padding_size;
+            }
+            break;
+        /* El padding ANSIX9_23 consiste en rellenar con 0s salvo el último, que
+         * se rellena con el tamaño de padding. */
+        case ANSIX9_23:
+            for (i = size; i < (BYTES_IN_BLOCK - 1); i++) {
+                padding_block[i] = 0;
+            }
+            padding_block[BYTES_IN_BLOCK - 1] = padding_size;
+            break;
+        /* El padding ISO_10126 consiste en rellenar con números aleatorios
+         * salvo el último, que se rellena con el tamaño de padding. */
+        case ISO_10126:
+            srand(time(NULL));
+            for (i = size; i < (BYTES_IN_BLOCK - 1); i++) {
+                padding_block[i] = rand() % 256;
+            }
+            padding_block[BYTES_IN_BLOCK - 1] = padding_size;
+            break;
+        /*Si el método no esta soportado, se da error. */
+        default:
+            fprintf(stderr, "Error. Tipo de padding no soportado.\n");
+            free(padding_block);
+            return NULL;
+            break;
+    }
+    return padding_block;
 }
