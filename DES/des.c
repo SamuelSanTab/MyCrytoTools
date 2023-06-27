@@ -86,6 +86,197 @@ static const unsigned short P[BITS_IN_P] = {
     15, 6, 19, 20, 28, 11, 27, 16, 0,  14, 22, 25, 4,  17, 30, 9,
     1,  7, 23, 13, 31, 26, 2,  8,  18, 12, 29, 5,  21, 10, 3,  24};
 
+/*Modo de operación ECB*/
+int DES_ECB_encrypt_data(const unsigned char* input, long int input_size,
+                         unsigned char** output, long int* output_size,
+                         const unsigned char* key,
+                         enum DES_padding padding_mode) {
+    long int num_blocks;
+    int i, j, padding;
+    unsigned char** key_index = NULL;
+    unsigned char* encrypted_text = NULL;
+    unsigned char* encrypted_block = NULL;
+    unsigned char* plain_block = NULL;
+
+    /* Se hace la comprobación de argumentos. */
+    if (input == NULL) {
+        fprintf(stderr, "Error. Input vacío.\n");
+        return -1;
+    } else if (input_size < 1) {
+        fprintf(stderr, "Error. Tamaño de array menor que 1.\n");
+        return -1;
+    } else if (key == NULL) {
+        fprintf(stderr, "Error. Clave vacía.\n");
+        return -1;
+    }
+
+    /* Se obtiene el número de bloques. */
+    num_blocks = input_size / BYTES_IN_BLOCK;
+
+    /* Se generan las sub_claves*/
+    key_index = DES_generate_subKeys(key);
+    if (key_index == NULL) {
+        return -1;
+    }
+
+    /* Se reserva memoria para el texto cifrado */
+    encrypted_text = (unsigned char*)calloc(BYTES_IN_BLOCK * (num_blocks + 1),
+                                            sizeof(unsigned char));
+    if (encrypted_text == NULL) {
+        free(*key_index);
+        free(key_index);
+        fprintf(stderr, "Error. Fallo al reservar memoria.\n");
+        return -1;
+    }
+
+    /* Se cifran todos los bloques que se tienen que cifrar completos. */
+    for (i = 0; i < num_blocks; i++) {
+        /* Se obtiene un bloque y se cifra. */
+        encrypted_block = DES_block_cipher(
+            &input[i * BYTES_IN_BLOCK], (const unsigned char**)key_index, true);
+        if (encrypted_block == NULL) {
+            free(*key_index);
+            free(key_index);
+            free(encrypted_text);
+            fprintf(stderr, "Error. Fallo al cifrar un bloque.\n");
+            return -1;
+        }
+        /*Se copia el bloque cifrado y se libera.*/
+        for (j = 0; j < BYTES_IN_BLOCK; j++) {
+            encrypted_text[i * BYTES_IN_BLOCK + j] = encrypted_block[j];
+        }
+        free(encrypted_block);
+    }
+
+    /* Se obtiene el bloque con el padding. */
+    padding = input_size % BYTES_IN_BLOCK;
+    if (padding == 0) {
+        plain_block = add_padding(NULL, padding, padding_mode);
+    } else {
+        plain_block = add_padding(&input[num_blocks * BYTES_IN_BLOCK], padding,
+                                  padding_mode);
+    }
+    if (plain_block == NULL) {
+        fprintf(stderr, "Error. Fallo al generar el bloque con el padding.\n");
+        free(*key_index);
+        free(key_index);
+        free(encrypted_text);
+        return -1;
+    }
+
+    /* Se cifra el último bloque y se añade al final */
+    encrypted_block =
+        DES_block_cipher(plain_block, (const unsigned char**)key_index, true);
+    free(plain_block);
+    if (encrypted_block == NULL) {
+        free(*key_index);
+        free(key_index);
+        free(encrypted_text);
+        return -1;
+    }
+
+    /*Se copia el bloque cifrado y se libera.*/
+    for (j = 0; j < BYTES_IN_BLOCK; j++) {
+        encrypted_text[i * BYTES_IN_BLOCK + j] = encrypted_block[j];
+    }
+    free(*key_index);
+    free(key_index);
+    free(encrypted_block);
+
+    /*Se actualizan los punteros de los argumentos.*/
+    *output = encrypted_text;
+    *output_size = BYTES_IN_BLOCK * (num_blocks + 1);
+    return 0;
+};
+
+int DES_ECB_decrypt_data(const unsigned char* input, long int input_size,
+                         unsigned char** output, long int* output_size,
+                         const unsigned char* key) {
+    long int num_blocks;
+    unsigned int padding;
+    int i, j;
+    unsigned char** key_index = NULL;
+    unsigned char* plain_text = NULL;
+    unsigned char* plain_block = NULL;
+
+    /* Se hace la comprobación de argumentos. */
+    if (input == NULL) {
+        fprintf(stderr, "Error. Input vacío.\n");
+        return -1;
+    } else if (input_size < 1) {
+        fprintf(stderr, "Error. Tamaño de input menor que 1.\n");
+        return -1;
+    } else if (key == NULL) {
+        fprintf(stderr, "Error. Clave vacía.\n");
+        return -1;
+    } else if (input_size % BYTES_IN_BLOCK) {
+        fprintf(stderr,
+                "Error. Tamaño de input no múltiplo del tamaño de bloque.\n");
+        return -1;
+    }
+
+    /* Se obtiene el número de bloques. */
+    num_blocks = input_size / BYTES_IN_BLOCK;
+
+    /* Se generan las sub-claves*/
+    key_index = DES_generate_subKeys(key);
+    if (key_index == NULL) {
+        return -1;
+    }
+    /* Se reserva memoria para el texto plano */
+    plain_text = (unsigned char*)calloc(input_size, sizeof(unsigned char));
+    if (plain_text == NULL) {
+        free(*key_index);
+        free(key_index);
+        fprintf(stderr, "Error. Fallo al reservar memoria.\n");
+        return -1;
+    }
+
+    /* Se descifran todos los bloques. */
+    for (i = 0; i < num_blocks; i++) {
+        /* Se obtiene un bloque y se cifra. */
+        plain_block = DES_block_cipher(&input[i * BYTES_IN_BLOCK],
+                                       (const unsigned char**)key_index, false);
+        if (plain_block == NULL) {
+            free(*key_index);
+            free(key_index);
+            free(plain_text);
+            fprintf(stderr, "Error. Fallo al cifrar un bloque.\n");
+            return -1;
+        }
+        /*Se copia el bloque cifrado y se libera.*/
+        for (j = 0; j < BYTES_IN_BLOCK; j++) {
+            plain_text[i * BYTES_IN_BLOCK + j] = plain_block[j];
+        }
+        free(plain_block);
+    }
+
+    /* Se obtiene el padding (independientemente del método, el último byte
+     * contiene el padding). */
+    padding = (unsigned int)plain_text[input_size - 1];
+    if (padding > BYTES_IN_BLOCK) {
+        free(*key_index);
+        free(key_index);
+        free(plain_text);
+        fprintf(stderr, "Error. Tamaño de padding superior al de bloque.\n");
+        return -1;
+    }
+
+    /* Se ajusta el tamaño de la memoria para eliminar el padding. */
+    *output = realloc(plain_text, input_size - padding);
+    if (*output == NULL) {
+        free(*key_index);
+        free(key_index);
+        free(plain_text);
+        fprintf(stderr, "Error. Fallo al reajusta la memoria.\n");
+        return -1;
+    }
+    free(*key_index);
+    free(key_index);
+
+    *output_size = input_size - padding;
+    return 0;
+}
 
 /*Funciones internas para el funcionamiento del DES.*/
 

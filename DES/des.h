@@ -6,10 +6,34 @@
 enum DES_padding { PKCS_5, ANSIX9_23, ISO_10126 };
 
 /*Modo de operación ECB*/
-unsigned char* DES_ECB_encrypt_data(const unsigned char* plain_text,
-                                    enum DES_padding padding_mode);
 
-unsigned char* DES_ECB_decrypt_data(const unsigned char* encrypted_text);
+/**
+ * La función cifra un array de bytes con DES y modo de operación ECB.
+ * @param plain_text Texto plano que cifrar.
+ * @param plain_size Tamaño del texto plano.
+ * @param encrypted_text Puntero destino del array cifrado.
+ * @param encrypted_size Tamaño de array cifrado.
+ * @param key Clave para cifrar.
+ * @param padding_mode Tipo de padding que añadir.
+ * @return 0 en caso de éxito o -1 en cualquier otro caso.
+ */
+int DES_ECB_encrypt_data(const unsigned char* plain_text, long int plain_size,
+                         unsigned char** encrypted_text,
+                         long int* encrypted_size, const unsigned char* key,
+                         enum DES_padding padding_mode);
+
+/**
+ * La función cifra un array de bytes con DES y modo de operación ECB.
+ * @param encrypted_text Texto cifrado que descifrar.
+ * @param encrypted_size Tamaño del texto cifrado.
+ * @param plain_text Puntero destino del array descifrado.
+ * @param plain_size Tamaño de array descifrado.
+ * @param key Clave para cifrar.
+ * @return 0 en caso de éxito o -1 en cualquier otro caso.
+ */
+int DES_ECB_decrypt_data(const unsigned char* encrypted_text, long int encrypted_size,
+                         unsigned char** plain_text, long int* plain_size,
+                         const unsigned char* key);
 
 int DES_ECB_encrypt_file(const char* plain_file, const char* output_file,
                          enum DES_padding padding_mode);
@@ -101,20 +125,29 @@ unsigned char* DES_F_function(const unsigned char* right,
 /**
  * La función genera las 16 sub-claves de DES.
  * @param key: Clave de 64 bits con la generar el resto de sub-claves.
- * @return En caso de éxito un array de 16 punteros a cada una de las sub-claves
- * (un único array de 96 bytes) o NULL en caso de error.
+ * @return En caso de éxito un array de 16 punteros a cada una de las
+ * sub-claves (un único array de 96 bytes) o NULL en caso de error.
  */
 unsigned char** DES_generate_subKeys(const unsigned char* key);
 
 /**
- * La función comprueba que la paridad impar del cada byte es correcta (Esta
- * indicado en el bit de menor valor de cada byte).
+ * La función comprueba que la paridad impar del cada byte es correcta.
  * @param data Array con los bytes que comprobar.
  * @param length Tamaño del array [data].
  * @return 0 En caso de que la paridad sea correcta o 1 en caso de que en
  * cualquiera de los bytes este mal.
- *
  */
 int checkOddParity(const unsigned char* data, int length);
+
+/**
+ * La función reserva memoria y completa un bloque con padding.
+ * @param block Bloque al que añadir padding. En caso de que no haya bloque
+ * al que añadir padding se deja en NULL.
+ * @param size Tamaño de [block].
+ * @param padding Tipo de padding que añadir.
+ * @return Bloque con el padding o NULL en caso de error.
+ */
+unsigned char* add_padding(const unsigned char* block, int size,
+                           enum DES_padding padding);
 
 #endif
