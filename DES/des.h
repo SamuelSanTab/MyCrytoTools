@@ -31,14 +31,17 @@ int DES_ECB_encrypt_data(const unsigned char* plain_text, long int plain_size,
  * @param key Clave para cifrar.
  * @return 0 en caso de éxito o -1 en cualquier otro caso.
  */
-int DES_ECB_decrypt_data(const unsigned char* encrypted_text, long int encrypted_size,
-                         unsigned char** plain_text, long int* plain_size,
-                         const unsigned char* key);
+int DES_ECB_decrypt_data(const unsigned char* encrypted_text,
+                         long int encrypted_size, unsigned char** plain_text,
+                         long int* plain_size, const unsigned char* key);
 
-int DES_ECB_encrypt_file(const char* plain_file, const char* output_file,
+int DES_ECB_encrypt_file(const char* plain_file, const char* encrypted_file,
+                         const unsigned char* key,
                          enum DES_padding padding_mode);
 
-int DES_ECB_decrypt_file(const char* encrypted_file);
+int DES_ECB_decrypt_file(const char* encrypted_file, const char* plain_file,
+                         const unsigned char* key,
+                         enum DES_padding padding_mode);
 
 /*Modo de operación CBC*/
 unsigned char* DES_CBC_encrypt_data(const unsigned char* plaintext,

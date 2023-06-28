@@ -2,7 +2,10 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/stat.h>
 #include <time.h>
+#include <unistd.h>
+#include <string.h>
 
 #define BYTES_IN_BLOCK 8
 
@@ -278,6 +281,122 @@ int DES_ECB_decrypt_data(const unsigned char* input, long int input_size,
     return 0;
 }
 
+int DES_ECB_encrypt_file(const char* plain_file, const char* encrypted_file,
+                         const unsigned char* key,
+                         enum DES_padding padding_mode) {
+    FILE* input = NULL;
+    FILE* output = NULL;
+    unsigned char plain_block[BYTES_IN_BLOCK + 1];
+    unsigned char* encrypted_block = NULL;
+    unsigned char* padding_block = NULL;
+    unsigned char** key_index = NULL;
+    int padding;
+
+    /* Se comprueban los argumentos. */
+    if (plain_file == NULL) {
+        fprintf(stderr, "Error. No hay nombre de archivo que cifrar.\n");
+        return -1;
+    } else if (encrypted_file == NULL) {
+        fprintf(stderr,
+                "Error. No hay nombre de archivo donde almacenar cifrado.\n");
+        return -1;
+    } else if (key == NULL) {
+        fprintf(stderr, "Error. No hay clave de cifrado.\n");
+        return -1;
+    }
+
+    /* Se comprueba que el archivo a cifrar existe y es accesible. */
+    if (access(plain_file, R_OK) != 0) {
+        fprintf(stderr, "Error. No se puede leer el archivo a cifrar.\n");
+        return -1;
+        /* Se comprueba que el segundo archivo no exista. */
+    } else if (access(encrypted_file, F_OK) == 0) {
+        fprintf(stderr, "Error. El archivo destino ya existe.\n");
+        return -1;
+    }
+
+    /* Se abren los archivos. */
+    input = fopen(plain_file, "rb");
+    if (input == NULL) {
+        fprintf(stderr, "Error. Fallo al abrir el archivo a cifrar.\n");
+        return -1;
+    }
+
+    output = fopen(encrypted_file, "wb");
+    if (output == NULL) {
+        fclose(input);
+        fprintf(stderr, "Error. Fallo al abrir el archivo destino.\n");
+        return -1;
+    }
+
+    /* Se generan las sub_claves*/
+    key_index = DES_generate_subKeys(key);
+    if (key_index == NULL) {
+        fclose(input);
+        fclose(output);
+        return -1;
+    }
+
+    /*Se recorre el archivo sin cifrar entero. */
+    padding = fread(plain_block, sizeof(char), BYTES_IN_BLOCK + 1, input);
+    while (padding == BYTES_IN_BLOCK) {
+        encrypted_block = DES_block_cipher(
+            plain_block, (const unsigned char**)key_index, true);
+        if (encrypted_block == NULL) {
+            free(*key_index);
+            free(key_index);
+            fclose(input);
+            fclose(output);
+            return -1;
+        }
+
+        fwrite(encrypted_block, sizeof(char), BYTES_IN_BLOCK, output);
+        padding = fread(plain_block, sizeof(char), BYTES_IN_BLOCK + 1, input);
+        free(encrypted_block);
+    }
+
+    /* Al último bloque se le añade padding antes de cifrarlo.  */
+    if (padding == 0) {
+        padding_block = add_padding(NULL, padding, padding_mode);
+    } else {
+        padding_block = add_padding(plain_block, padding, padding_mode);
+    }
+    if (padding_block == NULL) {
+        fprintf(stderr, "Error. Fallo al generar el bloque con el padding.\n");
+        free(*key_index);
+        free(key_index);
+        fclose(input);
+        fclose(output);
+        free(padding_block);
+        return -1;
+    }
+
+    /* Se cifra el último bloque y se añade al final */
+    encrypted_block =
+        DES_block_cipher(padding_block, (const unsigned char**)key_index, true);
+    free(padding_block);
+    if (encrypted_block == NULL) {
+        free(*key_index);
+        free(key_index);
+        fclose(input);
+        fclose(output);
+        return -1;
+    }
+
+    fwrite(encrypted_block, sizeof(char), BYTES_IN_BLOCK, output);
+    free(encrypted_block);
+    free(*key_index);
+    free(key_index);
+    fclose(input);
+    fclose(output);
+
+    return 0;
+}
+
+int DES_ECB_decrypt_file(const char* encrypted_file, const char* plain_file,
+                         const unsigned char* key,
+                         enum DES_padding padding_mode);
+
 /*Funciones internas para el funcionamiento del DES.*/
 
 unsigned char* DES_block_cipher(const unsigned char* block,
@@ -479,8 +598,8 @@ unsigned char** DES_generate_subKeys(const unsigned char* key) {
         }
     }
 
-    /* Se reserva memoria para las 16 sub-claves y para el indice que apunte a
-     * las mismas. */
+    /* Se reserva memoria para las 16 sub-claves y para el indice que apunte
+     * a las mismas. */
     subkey_size = BITS_IN_PC2 / 8;
     sub_keys = (char*)calloc(ROUNDS, sizeof(char) * subkey_size);
     if (sub_keys == NULL) {
@@ -556,18 +675,20 @@ int checkOddParity(const unsigned char* data, int length) {
 
     /* Recorre cada byte en la cadena para comprobarlo. */
     for (i = 0; i < length; i++, count = 0) {
-        /* Se obtienen por separado los 7 bits de contenido y el de paridad. */
+        /* Se obtienen por separado los 7 bits de contenido y el de paridad.
+         */
         byte = data[i] >> 1;
         parity = data[i] & 1;
 
-        /* Mientras el byte no sea 0 se cuenta si el bit de menor valor es 1. */
+        /* Mientras el byte no sea 0 se cuenta si el bit de menor valor
+         * es 1. */
         while (byte) {
             count += byte & 1;
             byte >>= 1;
         }
 
-        /* Si la paridad indica par, el bit de paridad tiene que ser 1; o si la
-         * paridad indica impar, el bit de paridad tiene que ser 0. */
+        /* Si la paridad indica par, el bit de paridad tiene que ser 1; o si
+         * la paridad indica impar, el bit de paridad tiene que ser 0. */
         if ((count % 2 == 0 && parity == 0) ||
             (count % 2 != 0 && parity != 0)) {
             return 1;
@@ -582,7 +703,8 @@ unsigned char* add_padding(const unsigned char* block, int size,
     unsigned char* padding_block = NULL;
     int i, padding_size = BYTES_IN_BLOCK - size;
 
-    /* Se comprueba que el tamaño del padding no sea mayor que el de bloque. */
+    /* Se comprueba que el tamaño del padding no sea mayor que el de bloque.
+     */
     if (size < 0 || size > BYTES_IN_BLOCK) {
         fprintf(stderr, "Error. Tamaño de bloque fuera de rango.\n");
         return NULL;
@@ -598,14 +720,15 @@ unsigned char* add_padding(const unsigned char* block, int size,
 
     /*Se rellena el resto del bloque. */
     switch (padding) {
-        /* El padding PKCS#5 consiste en rellenar con el tamaño de padding. */
+        /* El padding PKCS#5 consiste en rellenar con el tamaño de padding.
+         */
         case PKCS_5:
             for (i = size; i < BYTES_IN_BLOCK; i++) {
                 padding_block[i] = padding_size;
             }
             break;
-        /* El padding ANSIX9_23 consiste en rellenar con 0s salvo el último, que
-         * se rellena con el tamaño de padding. */
+        /* El padding ANSIX9_23 consiste en rellenar con 0s salvo el último,
+         * que se rellena con el tamaño de padding. */
         case ANSIX9_23:
             for (i = size; i < (BYTES_IN_BLOCK - 1); i++) {
                 padding_block[i] = 0;
