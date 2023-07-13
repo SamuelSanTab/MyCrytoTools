@@ -1,57 +1,62 @@
+/**
+ * @file des.c
+ * @author Samuel Sánchez Tabernero
+ * @date 13 Jul 2023
+ * @brief Implementación de las funciones del archivo des.h.
+ * @version 1.0
+ */
+
 #include "des.h"
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
-#include <string.h>
 
-#define BYTES_IN_BLOCK 8
+#define DES_BITS_IN_PC1 56
+#define DES_ROUNDS 16
+#define DES_BITS_IN_PC2 48
+#define DES_BITS_IN_IP 64
+#define DES_BITS_IN_E 48
+#define DES_NUM_S_BOXES 8
+#define DES_ROWS_PER_SBOX 4
+#define DES_COLUMNS_PER_SBOX 16
+#define DES_BITS_IN_P 32
 
-#define BITS_IN_PC1 56
-#define ROUNDS 16
-#define BITS_IN_PC2 48
-#define BITS_IN_IP 64
-#define BITS_IN_E 48
-#define NUM_S_BOXES 8
-#define ROWS_PER_SBOX 4
-#define COLUMNS_PER_SBOX 16
-#define BITS_IN_P 32
-
-/* Se ha modificado para que la que el resultado sean 8 bytes.*/
-static const unsigned short PC1[BITS_IN_PC1] = {
+static const unsigned short PC1[DES_BITS_IN_PC1] = {
     56, 48, 40, 32, 24, 16, 8,  0,  57, 49, 41, 33, 25, 17, 9,  1,  58, 50, 42,
     34, 26, 18, 10, 2,  59, 51, 43, 35, 62, 54, 46, 38, 30, 22, 14, 6,  61, 53,
     45, 37, 29, 21, 13, 5,  60, 52, 44, 36, 28, 20, 12, 4,  27, 19, 11, 3};
 
-static const unsigned short ROUND_SHIFTS[ROUNDS] = {1, 1, 2, 2, 2, 2, 2, 2,
-                                                    1, 2, 2, 2, 2, 2, 2, 1};
+static const unsigned short ROUND_SHIFTS[DES_ROUNDS] = {1, 1, 2, 2, 2, 2, 2, 2,
+                                                        1, 2, 2, 2, 2, 2, 2, 1};
 
-static const unsigned short PC2[BITS_IN_PC2] = {
+static const unsigned short PC2[DES_BITS_IN_PC2] = {
     13, 16, 10, 23, 0,  4,  2,  27, 14, 5,  20, 9,  22, 18, 11, 3,
     25, 7,  15, 6,  26, 19, 12, 1,  40, 51, 30, 36, 46, 54, 29, 39,
     50, 44, 32, 47, 43, 48, 38, 55, 33, 52, 45, 41, 49, 35, 28, 31};
 
-static const unsigned short IP[BITS_IN_IP] = {
+static const unsigned short IP[DES_BITS_IN_IP] = {
     57, 49, 41, 33, 25, 17, 9,  1, 59, 51, 43, 35, 27, 19, 11, 3,
     61, 53, 45, 37, 29, 21, 13, 5, 63, 55, 47, 39, 31, 23, 15, 7,
     56, 48, 40, 32, 24, 16, 8,  0, 58, 50, 42, 34, 26, 18, 10, 2,
     60, 52, 44, 36, 28, 20, 12, 4, 62, 54, 46, 38, 30, 22, 14, 6};
 
-static const unsigned short IP_INV[BITS_IN_IP] = {
+static const unsigned short IP_INV[DES_BITS_IN_IP] = {
     39, 7, 47, 15, 55, 23, 63, 31, 38, 6, 46, 14, 54, 22, 62, 30,
     37, 5, 45, 13, 53, 21, 61, 29, 36, 4, 44, 12, 52, 20, 60, 28,
     35, 3, 43, 11, 51, 19, 59, 27, 34, 2, 42, 10, 50, 18, 58, 26,
     33, 1, 41, 9,  49, 17, 57, 25, 32, 0, 40, 8,  48, 16, 56, 24};
 
-static const unsigned short E[BITS_IN_E] = {
+static const unsigned short E[DES_BITS_IN_E] = {
     31, 0,  1,  2,  3,  4,  3,  4,  5,  6,  7,  8,  7,  8,  9,  10,
     11, 12, 11, 12, 13, 14, 15, 16, 15, 16, 17, 18, 19, 20, 19, 20,
     21, 22, 23, 24, 23, 24, 25, 26, 27, 28, 27, 28, 29, 30, 31, 0};
 
 static const unsigned short
-    S_BOXES[NUM_S_BOXES][ROWS_PER_SBOX][COLUMNS_PER_SBOX] = {
+    S_BOXES[DES_NUM_S_BOXES][DES_ROWS_PER_SBOX][DES_COLUMNS_PER_SBOX] = {
         {{14, 4, 13, 1, 2, 15, 11, 8, 3, 10, 6, 12, 5, 9, 0, 7},
          {0, 15, 7, 4, 14, 2, 13, 1, 10, 6, 12, 11, 9, 5, 3, 8},
          {4, 1, 14, 8, 13, 6, 2, 11, 15, 12, 9, 7, 3, 10, 5, 0},
@@ -85,319 +90,9 @@ static const unsigned short
          {7, 11, 4, 1, 9, 12, 14, 2, 0, 6, 10, 13, 15, 3, 5, 8},
          {2, 1, 14, 7, 4, 10, 8, 13, 15, 12, 9, 0, 3, 5, 6, 11}}};
 
-static const unsigned short P[BITS_IN_P] = {
+static const unsigned short P[DES_BITS_IN_P] = {
     15, 6, 19, 20, 28, 11, 27, 16, 0,  14, 22, 25, 4,  17, 30, 9,
     1,  7, 23, 13, 31, 26, 2,  8,  18, 12, 29, 5,  21, 10, 3,  24};
-
-/*Modo de operación ECB*/
-int DES_ECB_encrypt_data(const unsigned char* input, long int input_size,
-                         unsigned char** output, long int* output_size,
-                         const unsigned char* key,
-                         enum DES_padding padding_mode) {
-    long int num_blocks;
-    int i, j, padding;
-    unsigned char** key_index = NULL;
-    unsigned char* encrypted_text = NULL;
-    unsigned char* encrypted_block = NULL;
-    unsigned char* plain_block = NULL;
-
-    /* Se hace la comprobación de argumentos. */
-    if (input == NULL) {
-        fprintf(stderr, "Error. Input vacío.\n");
-        return -1;
-    } else if (input_size < 1) {
-        fprintf(stderr, "Error. Tamaño de array menor que 1.\n");
-        return -1;
-    } else if (key == NULL) {
-        fprintf(stderr, "Error. Clave vacía.\n");
-        return -1;
-    }
-
-    /* Se obtiene el número de bloques. */
-    num_blocks = input_size / BYTES_IN_BLOCK;
-
-    /* Se generan las sub_claves*/
-    key_index = DES_generate_subKeys(key);
-    if (key_index == NULL) {
-        return -1;
-    }
-
-    /* Se reserva memoria para el texto cifrado */
-    encrypted_text = (unsigned char*)calloc(BYTES_IN_BLOCK * (num_blocks + 1),
-                                            sizeof(unsigned char));
-    if (encrypted_text == NULL) {
-        free(*key_index);
-        free(key_index);
-        fprintf(stderr, "Error. Fallo al reservar memoria.\n");
-        return -1;
-    }
-
-    /* Se cifran todos los bloques que se tienen que cifrar completos. */
-    for (i = 0; i < num_blocks; i++) {
-        /* Se obtiene un bloque y se cifra. */
-        encrypted_block = DES_block_cipher(
-            &input[i * BYTES_IN_BLOCK], (const unsigned char**)key_index, true);
-        if (encrypted_block == NULL) {
-            free(*key_index);
-            free(key_index);
-            free(encrypted_text);
-            fprintf(stderr, "Error. Fallo al cifrar un bloque.\n");
-            return -1;
-        }
-        /*Se copia el bloque cifrado y se libera.*/
-        for (j = 0; j < BYTES_IN_BLOCK; j++) {
-            encrypted_text[i * BYTES_IN_BLOCK + j] = encrypted_block[j];
-        }
-        free(encrypted_block);
-    }
-
-    /* Se obtiene el bloque con el padding. */
-    padding = input_size % BYTES_IN_BLOCK;
-    if (padding == 0) {
-        plain_block = add_padding(NULL, padding, padding_mode);
-    } else {
-        plain_block = add_padding(&input[num_blocks * BYTES_IN_BLOCK], padding,
-                                  padding_mode);
-    }
-    if (plain_block == NULL) {
-        fprintf(stderr, "Error. Fallo al generar el bloque con el padding.\n");
-        free(*key_index);
-        free(key_index);
-        free(encrypted_text);
-        return -1;
-    }
-
-    /* Se cifra el último bloque y se añade al final */
-    encrypted_block =
-        DES_block_cipher(plain_block, (const unsigned char**)key_index, true);
-    free(plain_block);
-    if (encrypted_block == NULL) {
-        free(*key_index);
-        free(key_index);
-        free(encrypted_text);
-        return -1;
-    }
-
-    /*Se copia el bloque cifrado y se libera.*/
-    for (j = 0; j < BYTES_IN_BLOCK; j++) {
-        encrypted_text[i * BYTES_IN_BLOCK + j] = encrypted_block[j];
-    }
-    free(*key_index);
-    free(key_index);
-    free(encrypted_block);
-
-    /*Se actualizan los punteros de los argumentos.*/
-    *output = encrypted_text;
-    *output_size = BYTES_IN_BLOCK * (num_blocks + 1);
-    return 0;
-};
-
-int DES_ECB_decrypt_data(const unsigned char* input, long int input_size,
-                         unsigned char** output, long int* output_size,
-                         const unsigned char* key) {
-    long int num_blocks;
-    unsigned int padding;
-    int i, j;
-    unsigned char** key_index = NULL;
-    unsigned char* plain_text = NULL;
-    unsigned char* plain_block = NULL;
-
-    /* Se hace la comprobación de argumentos. */
-    if (input == NULL) {
-        fprintf(stderr, "Error. Input vacío.\n");
-        return -1;
-    } else if (input_size < 1) {
-        fprintf(stderr, "Error. Tamaño de input menor que 1.\n");
-        return -1;
-    } else if (key == NULL) {
-        fprintf(stderr, "Error. Clave vacía.\n");
-        return -1;
-    } else if (input_size % BYTES_IN_BLOCK) {
-        fprintf(stderr,
-                "Error. Tamaño de input no múltiplo del tamaño de bloque.\n");
-        return -1;
-    }
-
-    /* Se obtiene el número de bloques. */
-    num_blocks = input_size / BYTES_IN_BLOCK;
-
-    /* Se generan las sub-claves*/
-    key_index = DES_generate_subKeys(key);
-    if (key_index == NULL) {
-        return -1;
-    }
-    /* Se reserva memoria para el texto plano */
-    plain_text = (unsigned char*)calloc(input_size, sizeof(unsigned char));
-    if (plain_text == NULL) {
-        free(*key_index);
-        free(key_index);
-        fprintf(stderr, "Error. Fallo al reservar memoria.\n");
-        return -1;
-    }
-
-    /* Se descifran todos los bloques. */
-    for (i = 0; i < num_blocks; i++) {
-        /* Se obtiene un bloque y se cifra. */
-        plain_block = DES_block_cipher(&input[i * BYTES_IN_BLOCK],
-                                       (const unsigned char**)key_index, false);
-        if (plain_block == NULL) {
-            free(*key_index);
-            free(key_index);
-            free(plain_text);
-            fprintf(stderr, "Error. Fallo al cifrar un bloque.\n");
-            return -1;
-        }
-        /*Se copia el bloque cifrado y se libera.*/
-        for (j = 0; j < BYTES_IN_BLOCK; j++) {
-            plain_text[i * BYTES_IN_BLOCK + j] = plain_block[j];
-        }
-        free(plain_block);
-    }
-
-    /* Se obtiene el padding (independientemente del método, el último byte
-     * contiene el padding). */
-    padding = (unsigned int)plain_text[input_size - 1];
-    if (padding > BYTES_IN_BLOCK) {
-        free(*key_index);
-        free(key_index);
-        free(plain_text);
-        fprintf(stderr, "Error. Tamaño de padding superior al de bloque.\n");
-        return -1;
-    }
-
-    /* Se ajusta el tamaño de la memoria para eliminar el padding. */
-    *output = realloc(plain_text, input_size - padding);
-    if (*output == NULL) {
-        free(*key_index);
-        free(key_index);
-        free(plain_text);
-        fprintf(stderr, "Error. Fallo al reajusta la memoria.\n");
-        return -1;
-    }
-    free(*key_index);
-    free(key_index);
-
-    *output_size = input_size - padding;
-    return 0;
-}
-
-int DES_ECB_encrypt_file(const char* plain_file, const char* encrypted_file,
-                         const unsigned char* key,
-                         enum DES_padding padding_mode) {
-    FILE* input = NULL;
-    FILE* output = NULL;
-    unsigned char plain_block[BYTES_IN_BLOCK + 1];
-    unsigned char* encrypted_block = NULL;
-    unsigned char* padding_block = NULL;
-    unsigned char** key_index = NULL;
-    int padding;
-
-    /* Se comprueban los argumentos. */
-    if (plain_file == NULL) {
-        fprintf(stderr, "Error. No hay nombre de archivo que cifrar.\n");
-        return -1;
-    } else if (encrypted_file == NULL) {
-        fprintf(stderr,
-                "Error. No hay nombre de archivo donde almacenar cifrado.\n");
-        return -1;
-    } else if (key == NULL) {
-        fprintf(stderr, "Error. No hay clave de cifrado.\n");
-        return -1;
-    }
-
-    /* Se comprueba que el archivo a cifrar existe y es accesible. */
-    if (access(plain_file, R_OK) != 0) {
-        fprintf(stderr, "Error. No se puede leer el archivo a cifrar.\n");
-        return -1;
-        /* Se comprueba que el segundo archivo no exista. */
-    } else if (access(encrypted_file, F_OK) == 0) {
-        fprintf(stderr, "Error. El archivo destino ya existe.\n");
-        return -1;
-    }
-
-    /* Se abren los archivos. */
-    input = fopen(plain_file, "rb");
-    if (input == NULL) {
-        fprintf(stderr, "Error. Fallo al abrir el archivo a cifrar.\n");
-        return -1;
-    }
-
-    output = fopen(encrypted_file, "wb");
-    if (output == NULL) {
-        fclose(input);
-        fprintf(stderr, "Error. Fallo al abrir el archivo destino.\n");
-        return -1;
-    }
-
-    /* Se generan las sub_claves*/
-    key_index = DES_generate_subKeys(key);
-    if (key_index == NULL) {
-        fclose(input);
-        fclose(output);
-        return -1;
-    }
-
-    /*Se recorre el archivo sin cifrar entero. */
-    padding = fread(plain_block, sizeof(char), BYTES_IN_BLOCK + 1, input);
-    while (padding == BYTES_IN_BLOCK) {
-        encrypted_block = DES_block_cipher(
-            plain_block, (const unsigned char**)key_index, true);
-        if (encrypted_block == NULL) {
-            free(*key_index);
-            free(key_index);
-            fclose(input);
-            fclose(output);
-            return -1;
-        }
-
-        fwrite(encrypted_block, sizeof(char), BYTES_IN_BLOCK, output);
-        padding = fread(plain_block, sizeof(char), BYTES_IN_BLOCK + 1, input);
-        free(encrypted_block);
-    }
-
-    /* Al último bloque se le añade padding antes de cifrarlo.  */
-    if (padding == 0) {
-        padding_block = add_padding(NULL, padding, padding_mode);
-    } else {
-        padding_block = add_padding(plain_block, padding, padding_mode);
-    }
-    if (padding_block == NULL) {
-        fprintf(stderr, "Error. Fallo al generar el bloque con el padding.\n");
-        free(*key_index);
-        free(key_index);
-        fclose(input);
-        fclose(output);
-        free(padding_block);
-        return -1;
-    }
-
-    /* Se cifra el último bloque y se añade al final */
-    encrypted_block =
-        DES_block_cipher(padding_block, (const unsigned char**)key_index, true);
-    free(padding_block);
-    if (encrypted_block == NULL) {
-        free(*key_index);
-        free(key_index);
-        fclose(input);
-        fclose(output);
-        return -1;
-    }
-
-    fwrite(encrypted_block, sizeof(char), BYTES_IN_BLOCK, output);
-    free(encrypted_block);
-    free(*key_index);
-    free(key_index);
-    fclose(input);
-    fclose(output);
-
-    return 0;
-}
-
-int DES_ECB_decrypt_file(const char* encrypted_file, const char* plain_file,
-                         const unsigned char* key,
-                         enum DES_padding padding_mode);
-
-/*Funciones internas para el funcionamiento del DES.*/
 
 unsigned char* DES_block_cipher(const unsigned char* block,
                                 const unsigned char** keys, bool mode) {
@@ -421,9 +116,8 @@ unsigned char* DES_block_cipher(const unsigned char* block,
         fprintf(stderr, "Error. Bloque vacío.\n");
         return NULL;
     }
-
     /* Se realiza la permutación IP */
-    for (i = 0, index = IP[i]; i < BITS_IN_IP; i++, index = IP[i]) {
+    for (i = 0, index = IP[i]; i < DES_BITS_IN_IP; i++, index = IP[i]) {
         mask = 1 << (7 - (index % 8));
         if (block[index / 8] & mask) {
             perm_block[i / 8] |= 1 << (7 - (i % 8));
@@ -434,7 +128,7 @@ unsigned char* DES_block_cipher(const unsigned char* block,
     half_right = &perm_block[4];
     /*Se realizan las 16 rondas*/
     if (mode == true) {
-        for (i = 0; i < ROUNDS; i++) {
+        for (i = 0; i < DES_ROUNDS; i++) {
             /*Se realiza la función F*/
             half_aux = DES_F_function(half_right, keys[i]);
             if (half_aux == NULL) {
@@ -454,7 +148,7 @@ unsigned char* DES_block_cipher(const unsigned char* block,
             half_right = half_aux;
         }
     } else {
-        for (i = ROUNDS; i > 0; i--) {
+        for (i = DES_ROUNDS; i > 0; i--) {
             /*Se realiza la función F*/
             half_aux = DES_F_function(half_right, keys[i - 1]);
             if (half_aux == NULL) {
@@ -489,7 +183,7 @@ unsigned char* DES_block_cipher(const unsigned char* block,
     }
 
     /* Se realiza la permutación IP_INV */
-    for (i = 0, index = IP_INV[i]; i < BITS_IN_IP; i++, index = IP_INV[i]) {
+    for (i = 0, index = IP_INV[i]; i < DES_BITS_IN_IP; i++, index = IP_INV[i]) {
         mask = 1 << (7 - (index % 8));
         if (swap_block[index / 8] & mask) {
             enc_block[i / 8] |= 1 << (7 - (i % 8));
@@ -505,8 +199,8 @@ unsigned char* DES_F_function(const unsigned char* right,
     unsigned char pre_half_block[] = {0x00, 0x00, 0x00, 0x00};
     unsigned char mask;
     unsigned short index, x_index, y_index;
-    unsigned short S_index[NUM_S_BOXES] = {0x00, 0x00, 0x00, 0x00,
-                                           0x00, 0x00, 0x00, 0x00};
+    unsigned short S_index[DES_NUM_S_BOXES] = {0x00, 0x00, 0x00, 0x00,
+                                               0x00, 0x00, 0x00, 0x00};
     unsigned char* half_block = NULL;
     int i;
 
@@ -520,7 +214,7 @@ unsigned char* DES_F_function(const unsigned char* right,
     }
 
     /*Se expande el medio bloque.*/
-    for (i = 0, index = E[i]; i < BITS_IN_E; i++, index = E[i]) {
+    for (i = 0, index = E[i]; i < DES_BITS_IN_E; i++, index = E[i]) {
         mask = 1 << (7 - (index % 8));
         if (right[index / 8] & mask) {
             exp_right[i / 8] |= 1 << (7 - (i % 8));
@@ -543,7 +237,8 @@ unsigned char* DES_F_function(const unsigned char* right,
     S_index[7] = exp_right[5] & 0b00111111;
 
     /*Se pasa el resultado por las cajas de sustitución*/
-    for (i = 0, index = S_index[i]; i < NUM_S_BOXES; i++, index = S_index[i]) {
+    for (i = 0, index = S_index[i]; i < DES_NUM_S_BOXES;
+         i++, index = S_index[i]) {
         y_index = (index & 0b011110) >> 1;
         x_index = (index & 0b100000) >> 4 | (index & 0b000001);
 
@@ -561,7 +256,7 @@ unsigned char* DES_F_function(const unsigned char* right,
     }
 
     /*Se realiza la permutación final.*/
-    for (i = 0, index = P[i]; i < BITS_IN_P; i++, index = P[i]) {
+    for (i = 0, index = P[i]; i < DES_BITS_IN_P; i++, index = P[i]) {
         mask = 1 << (7 - (index % 8));
         if (pre_half_block[index / 8] & mask) {
             half_block[i / 8] |= 1 << (7 - (i % 8));
@@ -570,7 +265,7 @@ unsigned char* DES_F_function(const unsigned char* right,
     return half_block;
 }
 
-unsigned char** DES_generate_subKeys(const unsigned char* key) {
+unsigned char** DES_generate_subkeys(const unsigned char* key) {
     unsigned char key_gen[] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
     unsigned char* sub_keys = NULL;
     unsigned char** key_index = NULL;
@@ -584,14 +279,8 @@ unsigned char** DES_generate_subKeys(const unsigned char* key) {
         return NULL;
     }
 
-    /* Se comprueba la paridad de la clave. */
-    if (checkOddParity(key, BYTES_IN_BLOCK) != 0) {
-        fprintf(stderr, "Error. La clave no cumple con la paridad.\n");
-        return NULL;
-    }
-
     /* Se realiza la permutación PC1 */
-    for (i = 0, index = PC1[i]; i < BITS_IN_PC1; i++, index = PC1[i]) {
+    for (i = 0, index = PC1[i]; i < DES_BITS_IN_PC1; i++, index = PC1[i]) {
         mask_1 = 0b1 << (7 - (index % 8));
         if (key[index / 8] & mask_1) {
             key_gen[i / 8] |= 0b1 << (7 - (i % 8));
@@ -600,13 +289,13 @@ unsigned char** DES_generate_subKeys(const unsigned char* key) {
 
     /* Se reserva memoria para las 16 sub-claves y para el indice que apunte
      * a las mismas. */
-    subkey_size = BITS_IN_PC2 / 8;
-    sub_keys = (char*)calloc(ROUNDS, sizeof(char) * subkey_size);
+    subkey_size = DES_BITS_IN_PC2 / 8;
+    sub_keys = (unsigned char*)calloc(DES_ROUNDS, sizeof(char) * subkey_size);
     if (sub_keys == NULL) {
         fprintf(stderr, "Error. Fallo al reservar memoria.\n");
         return NULL;
     }
-    key_index = (unsigned char**)calloc(ROUNDS, sizeof(char*));
+    key_index = (unsigned char**)calloc(DES_ROUNDS, sizeof(char*));
     if (key_index == NULL) {
         free(sub_keys);
         fprintf(stderr, "Error. Fallo al reservar memoria.\n");
@@ -614,12 +303,12 @@ unsigned char** DES_generate_subKeys(const unsigned char* key) {
     }
 
     /* Se asignan los punteros al indice. */
-    for (i = 0; i < ROUNDS; i++) {
+    for (i = 0; i < DES_ROUNDS; i++) {
         key_index[i] = &sub_keys[subkey_size * i];
     }
 
     /*Se generan las 16 sub-claves*/
-    for (i = 0, shift = ROUND_SHIFTS[i]; i < ROUNDS;
+    for (i = 0, shift = ROUND_SHIFTS[i]; i < DES_ROUNDS;
          i++, shift = ROUND_SHIFTS[i]) {
         /* Se obtienen las mascaras para los shift de 1 y 3 bits*/
         if (shift == 1) {
@@ -643,13 +332,13 @@ unsigned char** DES_generate_subKeys(const unsigned char* key) {
         key_gen[1] = key_gen[1] << shift | key_gen[2] >> (8 - shift);
         key_gen[2] = key_gen[2] << shift | key_gen[3] >> (8 - shift);
         key_gen[3] = (key_gen[3] & 0xF0) << shift | mask_1 >> (4 - shift) |
-                     (key_gen[3] << shift) & 0x0F | key_gen[4] >> (8 - shift);
+                     ((key_gen[3] << shift) & 0x0F) | key_gen[4] >> (8 - shift);
         key_gen[4] = key_gen[4] << shift | key_gen[5] >> (8 - shift);
         key_gen[5] = key_gen[5] << shift | key_gen[6] >> (8 - shift);
         key_gen[6] = key_gen[6] << shift | mask_2 >> (4 - shift);
 
         /*Se realiza la permutación PC2*/
-        for (j = 0, index = PC2[j]; j < BITS_IN_PC2; j++, index = PC2[j]) {
+        for (j = 0, index = PC2[j]; j < DES_BITS_IN_PC2; j++, index = PC2[j]) {
             mask_1 = 0b1 << (7 - (index % 8));
             if (key_gen[index / 8] & mask_1) {
                 key_index[i][j / 8] |= 0b1 << (7 - (j % 8));
@@ -660,7 +349,7 @@ unsigned char** DES_generate_subKeys(const unsigned char* key) {
     return key_index;
 }
 
-int checkOddParity(const unsigned char* data, int length) {
+int DES_check_odd_parity(const unsigned char* data, int length) {
     unsigned char byte;
     int i, parity, count = 0;
 
@@ -698,23 +387,31 @@ int checkOddParity(const unsigned char* data, int length) {
     return 0;
 }
 
-unsigned char* add_padding(const unsigned char* block, int size,
-                           enum DES_padding padding) {
+unsigned char* DES_add_padding(const unsigned char* block, int length,
+                               enum DES_padding padding) {
     unsigned char* padding_block = NULL;
-    int i, padding_size = BYTES_IN_BLOCK - size;
+    int i, padding_size = DES_BLOCK_LENGTH - length;
 
     /* Se comprueba que el tamaño del padding no sea mayor que el de bloque.
      */
-    if (size < 0 || size > BYTES_IN_BLOCK) {
+    if (length < 0 || length > DES_BLOCK_LENGTH) {
         fprintf(stderr, "Error. Tamaño de bloque fuera de rango.\n");
         return NULL;
     }
 
+    /* En caso de que el bloque este vació, el tamaño tiene que corresponder a
+     * 0. */
+    if (block == NULL && length != 0) {
+        fprintf(stderr,
+                "Error. Si el bloque esta vació su tamaño tiene que ser 0.\n");
+        return NULL;
+    }
+
     /* Se crea un bloque al que añadirle el padding. */
-    padding_block = (unsigned char*)calloc(BYTES_IN_BLOCK, sizeof(char));
+    padding_block = (unsigned char*)calloc(DES_BLOCK_LENGTH, sizeof(char));
 
     /* Se copian los datos. */
-    for (i = 0; i < size; i++) {
+    for (i = 0; i < length; i++) {
         padding_block[i] = block[i];
     }
 
@@ -723,26 +420,26 @@ unsigned char* add_padding(const unsigned char* block, int size,
         /* El padding PKCS#5 consiste en rellenar con el tamaño de padding.
          */
         case PKCS_5:
-            for (i = size; i < BYTES_IN_BLOCK; i++) {
+            for (i = length; i < DES_BLOCK_LENGTH; i++) {
                 padding_block[i] = padding_size;
             }
             break;
         /* El padding ANSIX9_23 consiste en rellenar con 0s salvo el último,
          * que se rellena con el tamaño de padding. */
         case ANSIX9_23:
-            for (i = size; i < (BYTES_IN_BLOCK - 1); i++) {
+            for (i = length; i < (DES_BLOCK_LENGTH - 1); i++) {
                 padding_block[i] = 0;
             }
-            padding_block[BYTES_IN_BLOCK - 1] = padding_size;
+            padding_block[DES_BLOCK_LENGTH - 1] = padding_size;
             break;
         /* El padding ISO_10126 consiste en rellenar con números aleatorios
          * salvo el último, que se rellena con el tamaño de padding. */
         case ISO_10126:
             srand(time(NULL));
-            for (i = size; i < (BYTES_IN_BLOCK - 1); i++) {
+            for (i = length; i < (DES_BLOCK_LENGTH - 1); i++) {
                 padding_block[i] = rand() % 256;
             }
-            padding_block[BYTES_IN_BLOCK - 1] = padding_size;
+            padding_block[DES_BLOCK_LENGTH - 1] = padding_size;
             break;
         /*Si el método no esta soportado, se da error. */
         default:
